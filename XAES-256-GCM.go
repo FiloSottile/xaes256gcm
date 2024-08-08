@@ -7,6 +7,7 @@ package xaes256gcm
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/subtle"
 	"errors"
 )
@@ -28,6 +29,66 @@ const OverheadWithManualNonces = 16
 const Overhead = 40
 
 type xaes256gcm struct {
+	*xaes256gcmManual
+}
+
+// New returns a new XAES-256-GCM instance that automatically manages
+// generating/prepending/extracting nonces. As such, zero length nonces should
+// be passed in to [Seal] and [Open].
+func New(key []byte) (cipher.AEAD, error) {
+	x, err := newWithManualNonces(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return xaes256gcm{x}, nil
+}
+
+func (xaes256gcm) NonceSize() int {
+	return 0
+}
+
+func (xaes256gcm) Overhead() int {
+	return Overhead
+}
+
+func (x xaes256gcm) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
+	if len(nonce) != 0 {
+		panic("xaes256gcm: bad nonce length")
+	}
+
+	if total := len(dst) + len(plaintext) + Overhead; cap(dst) < total {
+		tmp := make([]byte, len(dst), total)
+		copy(tmp, dst)
+		dst = tmp
+	}
+
+	nonce = dst[len(dst) : len(dst)+NonceSize]
+	if _, err := rand.Read(nonce); err != nil {
+		panic(err)
+	}
+
+	dst = dst[:len(dst)+NonceSize]
+
+	return x.xaes256gcmManual.Seal(dst, nonce, plaintext, additionalData)
+}
+
+var errOpen = errors.New("xaes256gcm: message authentication failed")
+
+func (x xaes256gcm) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
+	if len(nonce) != 0 {
+		return nil, errors.New("xaes256gcm: bad nonce length")
+	}
+	if len(ciphertext) < NonceSize {
+		return nil, errOpen
+	}
+
+	nonce, ciphertext = ciphertext[:NonceSize], ciphertext[NonceSize:]
+
+	return x.xaes256gcmManual.Open(dst, nonce, ciphertext, additionalData)
+}
+
+type xaes256gcmManual struct {
 	c  cipher.Block
 	k1 [aes.BlockSize]byte
 }
@@ -37,15 +98,17 @@ type xaes256gcm struct {
 // [crypto/rand.Read]. key must be exactly 32 bytes long.
 //
 // Most applications should use [New] instead, which automatically generates
-// random nonces and prepends them to the ciphertext. (Note that New is not
-// implemented yet.)
+// random nonces and prepends them to the ciphertext.
 func NewWithManualNonces(key []byte) (cipher.AEAD, error) {
+	return newWithManualNonces(key)
+}
+
+func newWithManualNonces(key []byte) (*xaes256gcmManual, error) {
 	if len(key) != KeySize {
 		return nil, errors.New("xaes256gcm: bad key length")
 	}
 
-	x := new(xaes256gcm)
-
+	x := new(xaes256gcmManual)
 	x.c, _ = aes.NewCipher(key)
 	x.c.Encrypt(x.k1[:], x.k1[:])
 
@@ -59,15 +122,15 @@ func NewWithManualNonces(key []byte) (cipher.AEAD, error) {
 	return x, nil
 }
 
-func (*xaes256gcm) NonceSize() int {
+func (x *xaes256gcmManual) NonceSize() int {
 	return NonceSize
 }
 
-func (*xaes256gcm) Overhead() int {
+func (x *xaes256gcmManual) Overhead() int {
 	return OverheadWithManualNonces
 }
 
-func (x *xaes256gcm) deriveKey(nonce []byte) []byte {
+func (x *xaes256gcmManual) deriveKey(nonce []byte) []byte {
 	k := make([]byte, 0, 2*aes.BlockSize)
 	k = append(k, 0, 1, 'X', 0)
 	k = append(k, nonce...)
@@ -80,7 +143,7 @@ func (x *xaes256gcm) deriveKey(nonce []byte) []byte {
 	return k
 }
 
-func (x *xaes256gcm) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
+func (x *xaes256gcmManual) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 	if len(nonce) != NonceSize {
 		panic("xaes256gcm: bad nonce length")
 	}
@@ -91,9 +154,7 @@ func (x *xaes256gcm) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 	return a.Seal(dst, n, plaintext, additionalData)
 }
 
-var errOpen = errors.New("xaes256gcm: message authentication failed")
-
-func (x *xaes256gcm) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
+func (x *xaes256gcmManual) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
 	if len(nonce) != NonceSize {
 		return nil, errors.New("xaes256gcm: bad nonce length")
 	}
