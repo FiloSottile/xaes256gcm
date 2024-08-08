@@ -88,3 +88,38 @@ func TestAccumulated(t *testing.T) {
 		t.Errorf("got: %s", got)
 	}
 }
+
+func TestAutomatic(t *testing.T) {
+	key := bytes.Repeat([]byte{0x01}, xaes256gcm.KeySize)
+	plaintext := []byte("XAES-256-GCM")
+	c, err := xaes256gcm.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext := c.Seal(nil, nil, plaintext, nil)
+	cm, err := xaes256gcm.NewWithManualNonces(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := hex.EncodeToString(cm.Seal(nil, ciphertext[:xaes256gcm.NonceSize], plaintext, nil))
+	if got := hex.EncodeToString(ciphertext[xaes256gcm.NonceSize:]); got != expected {
+		t.Errorf("got: %s", got)
+	}
+	if decrypted, err := c.Open(nil, nil, ciphertext, nil); err != nil {
+		t.Fatal(err)
+	} else if !bytes.Equal(plaintext, decrypted) {
+		t.Errorf("plaintext and decrypted are not equal")
+	}
+
+	dst := make([]byte, 2+len(ciphertext))
+	copy(dst, []byte("hi"))
+	ciphertext = c.Seal(dst[:2], nil, plaintext, nil)
+	if !bytes.Equal(dst, ciphertext) {
+		t.Errorf("dst and ciphertext are not equal")
+	}
+	if decrypted, err := c.Open(nil, nil, ciphertext[2:], nil); err != nil {
+		t.Fatal(err)
+	} else if !bytes.Equal(plaintext, decrypted) {
+		t.Errorf("plaintext and decrypted are not equal")
+	}
+}
