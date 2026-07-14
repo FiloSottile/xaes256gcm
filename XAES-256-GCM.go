@@ -91,8 +91,6 @@ func (x *xaes256gcm) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 	return a.Seal(dst, n, plaintext, additionalData)
 }
 
-var errOpen = errors.New("xaes256gcm: message authentication failed")
-
 func (x *xaes256gcm) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
 	if len(nonce) != NonceSize {
 		return nil, errors.New("xaes256gcm: bad nonce length")
