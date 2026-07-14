@@ -1,19 +1,38 @@
 name: Go tests
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { go-version: stable }
+          - { go-version: oldstable }
+          - { go-version-file: go.mod }
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
-      - name: Install Go (from go.mod)
-        uses: actions/setup-go@v4
+          persist-credentials: false
+      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          check-latest: true
-      - name: Run tests
-        run: go test ./...
+          go-version: ${{ matrix.go-version }}
+          go-version-file: ${{ matrix.go-version-file }}
+      - run: go test ./...
+  staticcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - uses: geomys/sandboxed-step@v1.2.0
+        with:
+          run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
