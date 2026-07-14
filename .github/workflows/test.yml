@@ -23,9 +23,7 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           go-version-file: ${{ matrix.go-version-file }}
-      - uses: geomys/sandboxed-step@v1.2.0
-        with:
-          run: go test ./...
+      - run: go test ./...
   staticcheck:
     runs-on: ubuntu-latest
     steps:
